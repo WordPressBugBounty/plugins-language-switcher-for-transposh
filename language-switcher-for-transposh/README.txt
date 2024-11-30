@@ -3,8 +3,8 @@ Contributors: codingfix
 Donate link: https://www.paypal.com/paypalme/codingfix
 Tags: multi-language, translation
 Requires at least: 4.0.1
-Tested up to: 6.6
-Stable tag: 1.7.3
+Tested up to: 6.7
+Stable tag: 1.7.4
 Requires PHP: 5.6
 Requires Plugins: transposh-translation-filter-for-wordpress
 License: GPLv2 or later
@@ -351,6 +351,9 @@ Increased specificity of css rules in Settings page to avoid conflicts with othe
 
 = 1.7.3 =
 * Fixed a typo in the readme file
+
+= 1.7.4 =
+* Tested up to WordPress 6.7
 
 == Upgrade Notice ==
 
