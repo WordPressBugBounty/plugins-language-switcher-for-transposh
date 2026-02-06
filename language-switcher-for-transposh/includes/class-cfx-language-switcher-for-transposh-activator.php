@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Fired during plugin activation
  *
@@ -41,8 +40,8 @@ class Cfx_Language_Switcher_For_Transposh_Activator {
 			'select_as_list'      => 'yes',
 			'custom_list_items'   => 'flag-only',
 			'menu_locations'      => 'primary',
-			'customCSS'           => 'off',
-			'version'             => '1.3.4',
+			'custom_style'        => '',
+			'version'             => '2.0.0',
 			'hide_refb_notice'    => 'no',
 		);
 		$options          = get_option( 'cfxlsft_options', array() );

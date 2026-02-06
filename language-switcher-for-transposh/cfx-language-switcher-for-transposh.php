@@ -15,7 +15,7 @@
  * Plugin Name:       Language Switcher for Transposh
  * Plugin URI:        https://codingfix.com/language-switcher-for-transposh
  * Description:       A small plugin to use a customized language switcher with Transposh plugin.
- * Version:           1.7.4
+ * Version:           2.0.6
  * Author:            Marco Gasi
  * Author URI:        https://codingfix.com
  * License:           GPL-2.0+
@@ -29,7 +29,7 @@
  * Start at version 1.0.0 and use SemVer - https://semver.org
  * Rename this for your plugin and update it as you release new versions.
  */
-define( 'CFX_LANGUAGE_SWITCHER_FOR_TRANSPOSH_VERSION', '1.7.4' );
+define( 'CFX_LSFT_VERSION', '2.0.6' );
 
 /**
  * Define some constant to link some resource.
@@ -78,7 +78,6 @@ function run_cfx_language_switcher_for_transposh() {
 
 	$plugin = new Cfx_Language_Switcher_For_Transposh();
 	$plugin->run();
-
 }
 
 run_cfx_language_switcher_for_transposh();

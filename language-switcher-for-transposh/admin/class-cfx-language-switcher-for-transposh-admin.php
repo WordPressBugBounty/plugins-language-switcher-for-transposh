@@ -68,7 +68,25 @@ class Cfx_Language_Switcher_For_Transposh_Admin {
 	 * @since    1.0.0
 	 */
 	public function cfxlsft_admin_init() {
+		// 1. Load existing options.
+		$options = get_option( 'cfxlsft_options', array() );
 
+		$current_version = isset( $options['version'] ) ? $options['version'] : '1.0.0';
+
+		// 2. Check if new key exists in the array.
+		if ( version_compare( $current_version, CFX_LSFT_VERSION, '<' ) ) {
+			$options['custom_style'] = ''; // Initialize the new key with a default value.
+
+			// Remove the old one if present in the array.
+			if ( isset( $options['customCSS'] ) ) {
+				unset( $options['customCSS'] );
+			}
+
+			$options['version'] = CFX_LSFT_VERSION;
+
+			// 3. Save the entire updated array.
+			update_option( 'cfxlsft_options', $options );
+		}
 	}
 
 	/**
@@ -77,7 +95,6 @@ class Cfx_Language_Switcher_For_Transposh_Admin {
 	 * @since    1.0.0
 	 */
 	public function no_transposh_found() {
-		// if ( ! file_exists( WP_PLUGIN_DIR . '/transposh-translation-filter-for-wordpress/core/utils.php' ) ) {
 		if ( ! is_plugin_active( 'transposh-translation-filter-for-wordpress/transposh.php' ) ) {
 			?>
 			<div class="error notice">
@@ -93,10 +110,11 @@ class Cfx_Language_Switcher_For_Transposh_Admin {
 	 * @since    1.0.0
 	 */
 	public function check_transposh() {
-		// if ( ! is_plugin_active( 'transposh-translation-filter-for-wordpress/transposh.php' ) ) {
+
 		if ( ! file_exists( WP_PLUGIN_DIR . '/transposh-translation-filter-for-wordpress/core/utils.php' ) ) {
 			return false;
 		}
+		return true;
 	}
 
 	/**
@@ -119,9 +137,9 @@ class Cfx_Language_Switcher_For_Transposh_Admin {
 	public function check_lsft_version() {
 		$options           = get_option( 'cfxlsft_options' );
 		$installed_version = str_replace( '.', '', $options['version'] );
-		$current_version   = str_replace( '.', '', CFX_LANGUAGE_SWITCHER_FOR_TRANSPOSH_VERSION );
+		$current_version   = str_replace( '.', '', CFX_LSFT_VERSION );
 		if ( $installed_version <= '132' ) {
-			$dir1 = new RecursiveDirectoryIterator( plugin_dir_path( dirname( __FILE__, 1 ) ) . 'assets/styles', RecursiveDirectoryIterator::SKIP_DOTS );
+			$dir1 = new RecursiveDirectoryIterator( plugin_dir_path( __DIR__ ) . 'assets/styles', RecursiveDirectoryIterator::SKIP_DOTS );
 			$dir  = new RecursiveIteratorIterator( $dir1 );
 			foreach ( $dir as $fileinfo ) {
 				$file_parts = explode( '.', $fileinfo->getFilename() );
@@ -129,11 +147,19 @@ class Cfx_Language_Switcher_For_Transposh_Admin {
 					wp_delete_file( $fileinfo->getPath() . '/' . $fileinfo->getFilename() );
 				}
 			}
-			$dir = new DirectoryIterator( plugin_dir_path( dirname( __FILE__, 1 ) ) . 'assets/styles' );
+			$dir = new DirectoryIterator( plugin_dir_path( __DIR__ ) . 'assets/styles' );
 			foreach ( $dir as $fileinfo ) {
 				if ( $fileinfo->getFilename() === 'flags' || $fileinfo->getFilename() === 'list' || $fileinfo->getFilename() === 'select' ) {
-					$wp_filesystem_base = WP_Filesystem_Base();
-					$wp_filesystem_base->rmdir( $fileinfo->getPath() . '/' . $fileinfo->getFilename(), true );
+					// Initialize WP Filesystem and try to remove the directory recursively.
+					WP_Filesystem();
+					global $wp_filesystem;
+					$target = $fileinfo->getPath() . '/' . $fileinfo->getFilename();
+					if ( $wp_filesystem && method_exists( $wp_filesystem, 'rmdir' ) ) {
+						$wp_filesystem->rmdir( $target, true );
+					} else {
+						// Fallback to PHP-based recursive removal.
+						$this->cfxlsft_rrmdir( $target );
+					}
 				}
 			}
 		}
@@ -182,7 +208,6 @@ class Cfx_Language_Switcher_For_Transposh_Admin {
 	 * @since    1.0.0
 	 */
 	public function cfxlsft_admin_menu() {
-		// $nonce = wp_create_nonce( 'intnavfrommenu' );
 		add_options_page( __( 'Language Switcher for Transposh', 'Language Switcher for Transposh' ), __( 'Language Switcher for Transposh', 'Language Switcher for Transposh' ), 'manage_options', 'language-switcher-settings', array( $this, 'display_plugin_admin_page' ) );
 	}
 
@@ -192,23 +217,14 @@ class Cfx_Language_Switcher_For_Transposh_Admin {
 	 * @since     1.0.0
 	 */
 	public function load_style() {
-		$known_files   = array(
-			'basic_flags.css',
-			'basic_list.css',
-			'basic_select.css',
-			'shortcode_custom_dropdown_flags.css',
-			'shortcode_custom_dropdown_flags_names.css',
-			'shortcode_custom_dropdown_names.css',
-			'shortcode_horizontal_flags.css',
-			'shortcode_vertical_flags.css',
-		);
-		$stylesheet    = filter_input( INPUT_POST, 'stylesheet', FILTER_CALLBACK, array( 'options' => 'esc_html' ) );
-		$css           = '';
-		$full_css_path = LSFT_PLUGIN_PATH . "assets/styles/$stylesheet";
-		if ( in_array( $stylesheet, $known_files, true ) ) {
-			$wpfsd = new WP_Filesystem_Direct( false );
-			$css   = $wpfsd->get_contents( $full_css_path );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( 'Unauthorized' );
 		}
+		$css           = '';
+		$full_css_path = LSFT_PLUGIN_PATH . 'assets/styles/lsft.css';
+		WP_Filesystem();
+		global $wp_filesystem;
+		$css = $wp_filesystem->get_contents( $full_css_path );
 		echo esc_html( $css );
 		exit();
 	}
@@ -243,12 +259,6 @@ class Cfx_Language_Switcher_For_Transposh_Admin {
 			$options['original_lang_names'] = 'off';
 		}
 
-		if ( isset( $_POST['customCSS'] ) ) {
-			$options['customCSS'] = sanitize_text_field( wp_unslash( $_POST['customCSS'] ) );
-		} else {
-			$options['customCSS'] = 'off';
-		}
-
 		if ( isset( $_POST['flag_size'] ) ) {
 			$options['flag_size'] = sanitize_text_field( wp_unslash( $_POST['flag_size'] ) );
 			$flag_size            = $options['flag_size'];
@@ -273,10 +283,8 @@ class Cfx_Language_Switcher_For_Transposh_Admin {
 			$options['switcher_type'] = sanitize_text_field( wp_unslash( $_POST['switcher_type'] ) );
 		}
 
-		// $options['select_as_list'] = isset($_POST['select_as_list']) ? 'yes' : 'no';
-
-		if ( isset( $_POST['select_style'] ) ) {
-			$options['select_style'] = sanitize_text_field( wp_unslash( $_POST['select_style'] ) );
+		if ( isset( $_POST['custom_style'] ) ) {
+			$options['custom_style'] = sanitize_text_field( wp_unslash( $_POST['custom_style'] ) );
 		}
 
 		if ( isset( $_POST['list_style'] ) ) {
@@ -299,7 +307,6 @@ class Cfx_Language_Switcher_For_Transposh_Admin {
 			$tab = sanitize_text_field( wp_unslash( $_POST['activeTab'] ) );
 		}
 
-		// exit;
 		update_option( 'cfxlsft_options', $options );
 		wp_safe_redirect(
 			add_query_arg(
@@ -316,6 +323,9 @@ class Cfx_Language_Switcher_For_Transposh_Admin {
 
 	/**
 	 * Add a links near Deactivate link in the plugin list
+	 *
+	 * @since    1.0.0
+	 * @param    array $links Array of plugin links.
 	 */
 	public function add_action_links( $links ) {
 		/*
@@ -333,6 +343,39 @@ class Cfx_Language_Switcher_For_Transposh_Admin {
 	 * @since    1.0.0
 	 */
 	public function display_plugin_admin_page() {
-		require_once plugin_dir_path( dirname( __FILE__ ) ) . 'admin/partials/cfx-language-switcher-for-transposh-admin-display.php';
+		require_once plugin_dir_path( __DIR__ ) . 'admin/partials/cfx-language-switcher-for-transposh-admin-display.php';
+	}
+
+	/**
+	 * Recursively remove a directory using PHP functions as a fallback when WP_Filesystem is unavailable.
+	 *
+	 * @param string $dir Directory path to remove.
+	 * @return void
+	 */
+	private function cfxlsft_rrmdir( $dir ) {
+		if ( ! file_exists( $dir ) ) {
+			return;
+		}
+		if ( is_file( $dir ) || is_link( $dir ) ) {
+			wp_delete_file( $dir );
+			return;
+		}
+		$items = scandir( $dir );
+		if ( is_array( $items ) ) {
+			foreach ( $items as $item ) {
+				if ( '.' === $item || '..' === $item ) {
+					continue;
+				}
+				$this->cfxlsft_rrmdir( $dir . DIRECTORY_SEPARATOR . $item );
+			}
+		}
+		WP_Filesystem();
+		global $wp_filesystem;
+		if ( $wp_filesystem && method_exists( $wp_filesystem, 'rmdir' ) ) {
+			$wp_filesystem->rmdir( $dir, true );
+		} else {
+			// Fallback to PHP-based recursive removal.
+			$this->cfxlsft_rrmdir( $dir );
+		}
 	}
 }

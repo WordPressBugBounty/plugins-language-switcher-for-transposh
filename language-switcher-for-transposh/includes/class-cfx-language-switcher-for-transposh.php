@@ -85,8 +85,8 @@ class Cfx_Language_Switcher_For_Transposh {
 	 * @since    1.0.0
 	 */
 	public function __construct() {
-		if ( defined( 'CFX_LANGUAGE_SWITCHER_FOR_TRANSPOSH_VERSION' ) ) {
-			$this->version = CFX_LANGUAGE_SWITCHER_FOR_TRANSPOSH_VERSION;
+		if ( defined( 'CFX_LSFT_VERSION' ) ) {
+			$this->version = CFX_LSFT_VERSION;
 		} else {
 			$this->version = '1.0.0';
 		}

@@ -1,28 +1,33 @@
 (function ($) {
 	"use strict";
 	$(function () {
-		/**
-		 * define these variables as global since codemirror is initialized within toggleCustomCssEditor() function and editor and editorSettings must be available in load_style() function too
-		 */
-		var editor, editorSettings;
+		var editor, editorSettings, isDirty = false;
 
-		function showSpinner() {
-			$(".myspinner").css({
-				visibility: "visible",
-				opacity: "1",
+		function initEditor() {
+			editorSettings = wp.codeEditor.defaultSettings
+				? _.clone(wp.codeEditor.defaultSettings)
+				: {};
+			editorSettings.codemirror = _.extend({}, editorSettings.codemirror, {
+				autoRefresh: true,
+				indentUnit: 4,
+				tabSize: 4,
+				mode: "css",
 			});
-		}
-
-		function hidseSpinner() {
-			$(".myspinner").css({
-				visibility: "hidden",
-				opacity: "0",
+			editor = wp.codeEditor.initialize(
+				$("#code_editor_page_css"),
+				editorSettings
+			);
+			// check for changes in the editor
+			editor.codemirror.on('change', function (cMirror) {
+				isDirty = true;
+				// Update original textarea (necessary for form submission)
+				cMirror.save();
 			});
 		}
 
 		function load_style() {
-			var stylesheet = $("#select_style").val();
-			showSpinner();
+			var stylesheet = 'lsft.css';
+			initEditor();
 			var data = {
 				action: "load_style",
 				stylesheet: stylesheet,
@@ -36,160 +41,158 @@
 							$("#code_editor_page_css"),
 							editorSettings
 						);
-						$(".CodeMirror-wrap").addClass("disabled");
 					}
 				}
-			}).done(function () {
-				hidseSpinner();
 			});
 		}
 
-		function setSelectStylesOPtions() {
-			if ($("#select_style").val() !== "none") {
-				$('#select_style option:contains("Choose one")').text("Clear");
-			} else {
-				$('#select_style option:contains("Clear")').text("Choose one");
+		$('#reset-css').on('click', function (e) {
+			e.preventDefault();
+			if (confirm("Are you sure? This will delete your custom CSS and restore the default file.")) {
+				var data = {
+					action: "load_style",
+					stylesheet: 'lsft.css',
+				};
+				$.post(ajaxurl, data, function (result) {
+					if (result) {
+						editor.codemirror.setValue(result);
+						isDirty = false;
+						$('#custom-style-form').submit();
+					}
+				});
 			}
-		}
+		});
 
-		$("#select_style").on("change", function () {
-			if ($("#select_style").val() === "none") {
-				setSelectStylesOPtions();
-				hidseSpinner();
-				if (editor) {
-					editor.codemirror.toTextArea();
-					$("#code_editor_page_css").val("");
-					editor = wp.codeEditor.initialize(
-						$("#code_editor_page_css"),
-						editorSettings
-					);
-					$(".CodeMirror-wrap").addClass("disabled");
-				}
+		function load_initial_content() {
+			// Se la textarea ha già del contenuto (caricato da PHP dal DB), non chiamare AJAX
+			if ($("#code_editor_page_css").val().trim() !== "") {
+				initEditor();
 			} else {
-				setSelectStylesOPtions();
+				// Se è vuota, carica il default via AJAX
 				load_style();
 			}
-		});
-
-		$("#automode-toggler").on("click", function () {
-			toggleAutomode();
-		});
-
-		function toggleAutomode() {
-			if ($("#automode-toggler").is(":checked")) {
-				$("#menus").show();
-				$("#switcher-type").show();
-				$("#switcher-classes").show();
-			} else {
-				$("#menus").hide();
-				$("#switcher-type").hide();
-				$("#switcher-classes").hide();
-			}
 		}
 
-		$("#customCSS").on("click", function () {
-			$("#select_style").val("none");
-			setSelectStylesOPtions();
-			toggleCustomCssEditor();
+
+		$('#custom-style-form').on('submit', function () {
+			isDirty = false;
 		});
 
-		function toggleCustomCssEditor() {
-			if ($("#customCSS").is(":checked")) {
-				$("#custom_css_editor").show();
-				editorSettings = wp.codeEditor.defaultSettings
-					? _.clone(wp.codeEditor.defaultSettings)
-					: {};
-				editorSettings.codemirror = _.extend({}, editorSettings.codemirror, {
-					autoRefresh: true,
-					indentUnit: 4,
-					tabSize: 4,
-					mode: "css",
-				});
-				editor = wp.codeEditor.initialize(
-					$("#code_editor_page_css"),
-					editorSettings
-				);
-				$(".CodeMirror-wrap").addClass("disabled");
-			} else {
-				$("#custom_css_editor").hide();
+		// if css has changed alert user about unsaved changes
+		$(window).on('beforeunload', function () {
+			if (isDirty) {
+				return "You have unsaved changes!";
 			}
-		}
-
-		$("#clear-codemirror").on("click", function (e) {
-			e.preventDefault();
-			$("#select_style").val("none");
-			$("#select_style").trigger("change");
 		});
 
-		$(document).on("change", "#switcher_type", function () {
-			if ($(this).val() == "list") {
+		// $("#automode-toggler").on("click", function () {
+		// 	toggleAutomode();
+		// });
+
+		// function toggleAutomode() {
+		// 	if ($("#automode-toggler").is(":checked")) {
+		// 		$("#menus").show();
+		// 		$("#switcher-type").show();
+		// 		$("#switcher-classes").show();
+		// 	} else {
+		// 		$("#menus").hide();
+		// 		$("#switcher-type").hide();
+		// 		$("#switcher-classes").hide();
+		// 	}
+		// }
+
+		const $switcherType = $('#switcher_type');
+		const $customSelect = $('#custom_list_items');
+		const $imageOptions = $customSelect.find('[data-requires-images="1"]');
+		function updateOptions() {
+			if ($switcherType.val() === "list" || $switcherType.val() === "select") {
 				if (!$("#flag_styles").hasClass("hidden")) {
 					$("#flag_styles").addClass("hidden");
 				}
 				$("#dropdown_styles").removeClass("hidden");
+
+				const isSelect = $switcherType.val() === 'select';
+
+				$imageOptions.prop('disabled', isSelect);
+				if (isSelect) {
+					const $selected = $customSelect.find('option:selected');
+
+					// Se l'opzione selezionata ora è disabilitata
+					if ($selected.prop('disabled')) {
+						// Seleziona la prima opzione valida
+						$customSelect
+							.find('option:not(:disabled)')
+							.first()
+							.prop('selected', true);
+
+						// Notifica eventuali listener
+						$customSelect.trigger('change');
+					}
+				}
 			} else {
 				$("#flag_styles").removeClass("hidden");
 				if (!$("#dropdown_styles").hasClass("hidden")) {
 					$("#dropdown_styles").addClass("hidden");
 				}
 			}
+		}
+		$(document).on("change", "#switcher_type", updateOptions);
+
+		$(document).on('click', '.shortcode-sel', function (e) {
+			copyToClipboard($(this).text(), e);
 		});
 
-		// $("nav.nav-tab-wrapper.lsft a").on("click", function (e) {
-		// 	e.preventDefault();
-		// 	$("nav.nav-tab-wrapper.lsft .nav-tab").removeClass("active");
-		// 	$(".tab-panel").removeClass("active");
-		// 	$(this).addClass("active");
-		// 	var target = $(this).data("target");
-		// 	$("#" + target).addClass("active");
-		// 	$("#activeTab").val(target);
-		// });
+		function showConfirm(e, message = 'Copied!') {
 
-		// function setActivePanel() {
-		// 	$("nav.nav-tab-wrapper.lsft .nav-tab.active").trigger("click");
-		// }
+			// Rimuove eventuali conferme già presenti
+			$('.confirm-message').remove();
 
-		function toggleListItems() {
-			if ($("#switcher_type").val() === "list") {
-				$("#dropdown_styles").removeClass("hidden");
-			} else {
-				$("#dropdown_styles").addClass("hidden");
-			}
+			const $confirm = $('<div class="confirm-message"></div>')
+				.text(message)
+				.css({
+					position: 'absolute',
+					top: e.pageY + 10,
+					left: e.pageX + 10,
+					padding: '6px 10px',
+					background: '#393939',
+					color: '#fff',
+					borderRadius: '4px',
+					fontSize: '13px',
+					display: 'none',
+					zIndex: 9999
+				});
+
+			$('body').append($confirm);
+
+			$confirm
+				.fadeIn(200)
+				.delay(3000)
+				.fadeOut(400, function () {
+					$(this).remove();
+				});
 		}
 
-		function showConfirm() {
-			$("#confirmMessage").fadeIn("slow");
-			setInterval(() => {
-				$("#confirmMessage").fadeOut("slow");
-			}, 4000);
+
+		function copyToClipboard(element, e) {
+			navigator.clipboard.writeText(element).then(
+				function () {
+					showConfirm(e, 'Copied to clipboard');
+				},
+				function () {
+					alert('Failure to copy. Check permissions for clipboard');
+				}
+			);
 		}
 
-		function copyToClipboard(element) {
-			// var $temp = $("<input>");
-			// $("body").append($temp);
-			// $temp.val($(element).val()).select();
-			// document.execCommand("copy");
-			// $temp.remove();
-			// showConfirm();
-			navigator.clipboard.writeText(element).then(function () {
-				alert('It worked! Do a CTRL - V to paste')
-			}, function () {
-				alert('Failure to copy. Check permissions for clipboard')
-			});
-		}
 
 		$("#copy-to-clipboard").on("click", function (e) {
 			e.preventDefault();
-			copyToClipboard($("#code_editor_page_css").val());
-			// $(".textarea").text().select();
-			// document.execCommand("copy");
+			copyToClipboard($("#code_editor_page_css").val(), e);
 		});
 
-		toggleAutomode();
-		toggleCustomCssEditor();
-		toggleListItems();
-		load_style();
-		setSelectStylesOPtions();
+		// toggleAutomode();
+		updateOptions();
+		load_initial_content();
 		$("#select_style").trigger("change");
 	}); //end jQuery
 })(jQuery);

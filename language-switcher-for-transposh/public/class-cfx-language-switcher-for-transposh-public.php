@@ -16,13 +16,7 @@
 // [ ] allow some very basic customization of styles like flag size (for menu and shorcode), horizontal and vertical alignment (for shortcodes).
 // [ ] check filter_input filter option.
 
-/**
- * if Transposh is not installed we show an error message on activation
- */
-// if (!file_exists(WP_PLUGIN_DIR . '/transposh-translation-filter-for-wordpress/core/utils.php')) {
-// echo "Language Switcher for Transposh can't be activated because Transposh plugin can't be found in WordPress plugins directory. Please, install Transposh plugin before to activate Language Switcher for Transposh. Thank you.";
-// }
-// require_once WP_PLUGIN_DIR . '/transposh-translation-filter-for-wordpress/core/utils.php';
+
 /**
  * The public-facing functionality of the plugin.
  *
@@ -33,7 +27,6 @@
  * @subpackage Cfx_Language_Switcher_For_Transposh/public
  * @author     Marco Gasi <codingfix@codingfix.com>
  */
-
 class Cfx_Language_Switcher_For_Transposh_Public {
 
 
@@ -119,6 +112,15 @@ class Cfx_Language_Switcher_For_Transposh_Public {
 	private $used_languages;
 
 	/**
+	 * The array of the languages set (cache).
+	 *
+	 * @since    1.0.0
+	 * @access   private
+	 * @var      array    $languages    The languages saved in cache.
+	 */
+	private $languages;
+
+	/**
 	 * The size of the flag.
 	 *
 	 * @since    1.0.0
@@ -144,19 +146,24 @@ class Cfx_Language_Switcher_For_Transposh_Public {
 	 * @param      string $version    The version of this plugin.
 	 */
 	public function __construct( $plugin_name, $version ) {
+		$this->plugin_name = $plugin_name;
+		$this->version     = isset( $version ) ? $version : '1.0.0';
+		$this->options     = get_option( 'cfxlsft_options', array() );
 		if ( file_exists( WP_PLUGIN_DIR . '/transposh-translation-filter-for-wordpress/core/utils.php' ) && file_exists( WP_PLUGIN_DIR . '/transposh-translation-filter-for-wordpress/core/constants.php' ) ) {
 			include_once WP_PLUGIN_DIR . '/transposh-translation-filter-for-wordpress/core/utils.php';
 			include_once WP_PLUGIN_DIR . '/transposh-translation-filter-for-wordpress/core/constants.php';
-			$this->plugin_name = $plugin_name;
-			$this->version     = $version;
-			$this->options     = get_option( 'cfxlsft_options' );
-			$this->style_path  = LSFT_PLUGIN_URL . 'assets/styles/';
-			$this->en_flag     = $this->get_en_flag();
-			$this->flag_path   = $this->get_flag_path();
-			// $this->flag_size = $this->options['flag_size'] . 'px';
-			if ( defined( TRANSPOSH_OPTIONS ) ) {
-				die();
+			if ( ! defined( 'TRANSPOSH_OPTIONS' ) ) {
+				define( 'TRANSPOSH_OPTIONS', 'transposh_options' );
 			}
+			if ( ! defined( 'TRANSPOSH_DIR_IMG' ) ) {
+				define( 'TRANSPOSH_DIR_IMG', '' );
+			}
+			$this->plugin_name       = $plugin_name;
+			$this->version           = $version;
+			$this->options           = get_option( 'cfxlsft_options' );
+			$this->style_path        = LSFT_PLUGIN_URL . 'assets/styles/';
+			$this->en_flag           = $this->get_en_flag();
+			$this->flag_path         = $this->get_flag_path();
 			$this->transposh_options = get_option( TRANSPOSH_OPTIONS );
 			$this->default_lang      = isset( $this->transposh_options['default_language'] ) ? $this->transposh_options['default_language'] : 'en';
 			if ( isset( $this->transposh_options['viewable_languages'] ) ) {
@@ -164,21 +171,72 @@ class Cfx_Language_Switcher_For_Transposh_Public {
 			} else {
 				$this->used_languages = array( 'en' );
 			}
-			if ( ! in_array( $this->default_lang, $this->used_languages ) ) {
-				array_unshift( $this->used_languages, $this->default_lang );
-			}
 			$this->current_lang = $this->get_current_lang();
 		}
 	}
 
+	/**
+	 * Returns the array of the languages set.
+	 *
+	 * @since    1.8.1
+	 */
+	private function get_languages() {
+		if ( isset( $this->languages ) && is_array( $this->languages ) && count( $this->languages ) > 0 ) {
+			return $this->languages;
+		}
+		$current   = $this->get_current_lang();
+		$flag_base = $this->get_flag_path();
+		$used      = $this->used_languages;
+		if ( ! in_array( $this->default_lang, $used, true ) ) {
+			array_unshift( $used, $this->default_lang );
+		}
+		$languages = array();
+		foreach ( $used as $lang ) {
+			$lang_name   = $this->get_lang_name( $lang );
+			$flag_name   = $this->get_flag_name( $lang );
+			$target      = $this->get_target_page( $lang );
+			$languages[] = array(
+				'code'       => $lang,
+				'name'       => $lang_name,
+				'flag'       => $flag_name,
+				'flag_url'   => $flag_base . '/' . $flag_name . '.png',
+				'alt'        => $lang_name,
+				'url'        => $target,
+				'is_current' => ( $current === $lang ),
+				'is_default' => ( $this->default_lang === $lang ),
+				'classes'    => array( 'no_translate' ),
+			);
+		}
+		$this->languages = $languages;
+		return $this->languages;
+	}
+
+	/**
+	 * Returns the name of a language.
+	 *
+	 * @param string $lang selected language.
+	 * @since    1.8.1
+	 */
+	private function get_lang_name( $lang ) {
+		return isset( $this->options['original_lang_names'] ) && 'on' === $this->options['original_lang_names'] ? ucfirst( transposh_consts::get_language_orig_name( $lang ) ) : ucfirst( transposh_consts::get_language_name( $lang ) );
+	}
+
+	/**
+	 * Returns the current language set in Transposh Translation Filter plugin.
+	 *
+	 * @since    1.0.0
+	 */
 	public function get_current_lang() {
-		$current_lang = transposh_utils::get_language_from_url(
-			$_SERVER['REQUEST_URI'],
-			isset( $_SERVER['HTTPS'] ) && $_SERVER['HTTPS'] != 'off' ? 'https://' : 'http://' .
-			$_SERVER['SERVER_NAME']
-		);
-		if ( empty( $current_lang ) ) {
-			$current_lang = $this->default_lang;
+		$current_lang = 'en';
+		if ( isset( $_SERVER['REQUEST_URI'] ) && isset( $_SERVER['SERVER_NAME'] ) ) {
+			$current_lang = transposh_utils::get_language_from_url(
+				sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ),
+				isset( $_SERVER['HTTPS'] ) && 'off' !== $_SERVER['HTTPS'] ? 'https://' : 'http://' .
+				sanitize_text_field( wp_unslash( $_SERVER['SERVER_NAME'] ) )
+			);
+			if ( empty( $current_lang ) ) {
+				$current_lang = $this->default_lang;
+			}
 		}
 		return $current_lang;
 	}
@@ -191,10 +249,14 @@ class Cfx_Language_Switcher_For_Transposh_Public {
 	public function register_shortcodes() {
 		add_shortcode( 'lsft_horizontal_flags', array( $this, 'shortcode_horizontal_flags' ) );
 		add_shortcode( 'lsft_vertical_flags', array( $this, 'shortcode_vertical_flags' ) );
+		add_shortcode( 'lsft_horizontal_codes', array( $this, 'shortcode_horizontal_codes' ) );
+		add_shortcode( 'lsft_vertical_codes', array( $this, 'shortcode_vertical_codes' ) );
 		add_shortcode( 'lsft_custom_dropdown_flags', array( $this, 'shortcode_custom_dropdown_flags' ) );
 		add_shortcode( 'lsft_custom_dropdown_flags_names', array( $this, 'shortcode_custom_dropdown_flags_names' ) );
 		add_shortcode( 'lsft_custom_dropdown_names', array( $this, 'shortcode_custom_dropdown_names' ) );
-		add_shortcode( 'lsft_native_dropdown', array( $this, 'shortcode_native_dropdown' ) );
+		add_shortcode( 'lsft_custom_dropdown_codes', array( $this, 'shortcode_custom_dropdown_codes' ) );
+		add_shortcode( 'lsft_native_dropdown_text', array( $this, 'shortcode_native_dropdown_text' ) );
+		add_shortcode( 'lsft_native_dropdown_codes', array( $this, 'shortcode_native_dropdown_codes' ) );
 	}
 
 	/**
@@ -205,14 +267,12 @@ class Cfx_Language_Switcher_For_Transposh_Public {
 	public function enqueue_styles() {
 
 		wp_enqueue_style( $this->plugin_name, plugin_dir_url( __FILE__ ) . 'css/cfx-language-switcher-for-transposh-public.css', array(), $this->version, 'all' );
-		wp_enqueue_style( $this->plugin_name . '-basic_flags', $this->style_path . 'basic_flags.css', array(), $this->version, 'all' );
-		wp_enqueue_style( $this->plugin_name . '-basic_list', $this->style_path . 'basic_list.css', array(), '2.0', 'all' );
-		wp_enqueue_style( $this->plugin_name . '-basic_select', $this->style_path . 'basic_select.css', array(), $this->version, 'all' );
-		wp_enqueue_style( $this->plugin_name . '-shortcode_horizontal_flags', $this->style_path . 'shortcode_horizontal_flags.css', array(), $this->version, 'all' );
-		wp_enqueue_style( $this->plugin_name . '-shortcode_vertical_flags', $this->style_path . 'shortcode_vertical_flags.css', array(), $this->version, 'all' );
-		wp_enqueue_style( $this->plugin_name . '-shortcode_custom_dropdown_flags', $this->style_path . 'shortcode_custom_dropdown_flags.css', array(), $this->version, 'all' );
-		wp_enqueue_style( $this->plugin_name . '-shortcode_custom_dropdown_names', $this->style_path . 'shortcode_custom_dropdown_names.css', array(), $this->version, 'all' );
-		wp_enqueue_style( $this->plugin_name . '-shortcode_custom_dropdown_flags_names', $this->style_path . 'shortcode_custom_dropdown_flags_names.css', array(), $this->version, 'all' );
+		wp_enqueue_style( $this->plugin_name . '-lsft', $this->style_path . 'lsft.css', array(), $this->version, 'all' );
+
+		// if custom style exists, insert it inline.
+		if ( ! empty( $this->options['custom_style'] ) ) {
+			wp_add_inline_style( $this->plugin_name, $this->options['custom_style'] );
+		}
 	}
 
 	/**
@@ -258,14 +318,17 @@ class Cfx_Language_Switcher_For_Transposh_Public {
 	 * @since    1.0.0
 	 */
 	public function get_flag_name( $lang ) {
-		if ( 'tp' === $this->options['flag_type'] ) {
+		// Se per errore viene passato l'intero array del linguaggio, estraiamo solo il codice.
+		if ( is_array( $lang ) ) {
+			$lang = isset( $lang['code'] ) ? $lang['code'] : 'en';
+		}
+
+		if ( isset( $this->options['flag_type'] ) && 'tp' === $this->options['flag_type'] ) {
 			$flag_name = transposh_consts::get_language_flag( $lang );
+		} elseif ( 'en' === $lang ) {
+			$flag_name = $this->en_flag;
 		} else {
-			if ( $lang === 'en' ) {
-				$flag_name = $this->en_flag;
-			} else {
-				$flag_name = transposh_consts::get_language_flag( $lang );
-			}
+			$flag_name = transposh_consts::get_language_flag( $lang );
 		}
 		return $flag_name;
 	}
@@ -275,15 +338,15 @@ class Cfx_Language_Switcher_For_Transposh_Public {
 	 *
 	 * @param string $lang selected language.
 	 * @since    1.0.0
-	 * in version 1.0.17 returns the page the user is visiting when he switched to anotger language
+	 * in version 1.0.17 returns the page the user is visiting when he switched to another language
 	 * last change reverted in version 1.0.20 because it just didn't work.
 	 */
 	public function get_target_page( $lang ) {
-		$site_url     = get_site_url();
+		$site_url = get_site_url();
 		if ( isset( $_SERVER['REQUEST_URI'] ) ) {
 			$current_page = wp_parse_url( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) );
 		}
-		if ( 'on' !== $this->options['redirect_to_home'] && is_array( $current_page ) ) {
+		if ( isset( $this->options['redirect_to_home'] ) && 'on' !== $this->options['redirect_to_home'] && is_array( $current_page ) ) {
 			if ( $this->get_current_lang() === $this->default_lang ) {
 				$slug = $current_page['path'];
 			} else {
@@ -306,402 +369,325 @@ class Cfx_Language_Switcher_For_Transposh_Public {
 	}
 
 	/**
-	 * Returns the markup of the first list item.
+	 * Renderizza il bottone "Edit" solo se l'utente ha i permessi.
 	 *
-	 * @since    1.0.0
+	 * @param string $layout The layout to use (horizontal, vertical, dropdown, select).
+	 * @param string $classes Additional classes to add to the button.
+	 * @return string The rendered HTML of the edit button or an empty string.
+	 * @since 1.8.1
 	 */
-	public function get_list_first_item_markup() {
-		$flag_name = $this->get_flag_name( $this->get_current_lang() );
-		$lang_name = $this->options['original_lang_names'] === 'on' ? ucfirst( transposh_consts::get_language_orig_name( $this->get_current_lang() ) ) : ucfirst( transposh_consts::get_language_name( $this->get_current_lang() ) );
-		switch ( $this->options['custom_list_items'] ) {
-			case 'flag-only':
-				$item = "<a class='menu-link' href='#' id='stylable-list-first-item'><img src='$this->flag_path/" . $flag_name . ".png'><span role='presentation' class='dropdown-menu-toggle'><span class='gp-icon icon-arrow'><svg viewBox='0 0 330 512' aria-hidden='true' xmlns='http://www.w3.org/2000/svg' width='1em' height='1em'><path d='M305.913 197.085c0 2.266-1.133 4.815-2.833 6.514L171.087 335.593c-1.7 1.7-4.249 2.832-6.515 2.832s-4.815-1.133-6.515-2.832L26.064 203.599c-1.7-1.7-2.832-4.248-2.832-6.514s1.132-4.816 2.832-6.515l14.162-14.163c1.7-1.699 3.966-2.832 6.515-2.832 2.266 0 4.815 1.133 6.515 2.832l111.316 111.317 111.316-111.317c1.7-1.699 4.249-2.832 6.515-2.832s4.815 1.133 6.515 2.832l14.162 14.163c1.7 1.7 2.833 4.249 2.833 6.515z'></path></svg></span></span></a>";
-				break;
-			case 'text-only':
-				$item = "<a class='menu-link' href='#' id='stylable-list-first-item' class='no_translate'>$lang_name<span role='presentation' class='dropdown-menu-toggle'><span class='gp-icon icon-arrow'><svg viewBox='0 0 330 512' aria-hidden='true' xmlns='http://www.w3.org/2000/svg' width='1em' height='1em'><path d='M305.913 197.085c0 2.266-1.133 4.815-2.833 6.514L171.087 335.593c-1.7 1.7-4.249 2.832-6.515 2.832s-4.815-1.133-6.515-2.832L26.064 203.599c-1.7-1.7-2.832-4.248-2.832-6.514s1.132-4.816 2.832-6.515l14.162-14.163c1.7-1.699 3.966-2.832 6.515-2.832 2.266 0 4.815 1.133 6.515 2.832l111.316 111.317 111.316-111.317c1.7-1.699 4.249-2.832 6.515-2.832s4.815 1.133 6.515 2.832l14.162 14.163c1.7 1.7 2.833 4.249 2.833 6.515z'></path></svg></span></span></a>";
-				break;
-			case 'flag-and-text':
-				$item = "<a class='menu-link' href='#' id='stylable-list-first-item' class='no_translate' style='background: url({$this->flag_path}/$flag_name.png) 0 center no-repeat;'>$lang_name<span role='presentation' class='dropdown-menu-toggle'><span class='gp-icon icon-arrow'><svg viewBox='0 0 330 512' aria-hidden='true' xmlns='http://www.w3.org/2000/svg' width='1em' height='1em'><path d='M305.913 197.085c0 2.266-1.133 4.815-2.833 6.514L171.087 335.593c-1.7 1.7-4.249 2.832-6.515 2.832s-4.815-1.133-6.515-2.832L26.064 203.599c-1.7-1.7-2.832-4.248-2.832-6.514s1.132-4.816 2.832-6.515l14.162-14.163c1.7-1.699 3.966-2.832 6.515-2.832 2.266 0 4.815 1.133 6.515 2.832l111.316 111.317 111.316-111.317c1.7-1.699 4.249-2.832 6.515-2.832s4.815 1.133 6.515 2.832l14.162 14.163c1.7 1.7 2.833 4.249 2.833 6.515z'></path></svg></span></span></a>";
-				break;
-			default:
-				$item = "<a class='menu-link' href='#' id='stylable-list-first-item' class='no_translate' style='background: url({$this->flag_path}/$flag_name.png) 0 center no-repeat;'>$lang_name<span role='presentation' class='dropdown-menu-toggle'><span class='gp-icon icon-arrow'><svg viewBox='0 0 330 512' aria-hidden='true' xmlns='http://www.w3.org/2000/svg' width='1em' height='1em'><path d='M305.913 197.085c0 2.266-1.133 4.815-2.833 6.514L171.087 335.593c-1.7 1.7-4.249 2.832-6.515 2.832s-4.815-1.133-6.515-2.832L26.064 203.599c-1.7-1.7-2.832-4.248-2.832-6.514s1.132-4.816 2.832-6.515l14.162-14.163c1.7-1.699 3.966-2.832 6.515-2.832 2.266 0 4.815 1.133 6.515 2.832l111.316 111.317 111.316-111.317c1.7-1.699 4.249-2.832 6.515-2.832s4.815 1.133 6.515 2.832l14.162 14.163c1.7 1.7 2.833 4.249 2.833 6.515z'></path></svg></span></span></a>";
-
+	private function maybe_render_edit_button( string $layout, string $classes = '' ) {
+		if ( $this->get_current_lang() === $this->default_lang ) {
+			return '';
 		}
-		return $item;
+
+		$user          = wp_get_current_user();
+		$allowed_roles = array( 'editor', 'administrator', 'author' );
+		if ( ! array_intersect( $allowed_roles, $user->roles ) ) {
+			return '';
+		}
+
+		$classes = trim( $classes . ' edit_translation no_translate' );
+		$link    = '<a class="menu-link" href="#"> Edit</a>';
+
+		return ( 'select' === $layout )
+		? '<option class="' . esc_attr( $classes ) . '">' . $link . '</option>'
+		: '<li class="' . esc_attr( $classes ) . '">' . $link . '</li>';
 	}
 
 	/**
-	 * Returns the markup of the first list item.
+	 * Renders a language switcher item.
 	 *
-	 * @since    1.0.0
+	 * @param array  $item language item data.
+	 * @param string $variant item variant (flag-only, text-only, code-only, flag-and-text).
+	 * @param string $context context where the item is rendered (menu, list, shortcode, etc).
+	 * @param string $classes additional classes to add to the item.
+	 * @since    1.8.1
 	 */
-	public function get_list_first_item_markup_sc_flags() {
-		$flag_name = $this->get_flag_name( $this->get_current_lang() );
-		return "<a class='menu-link' href='#' id='shortcode-stylable-list-first-item'><img src='$this->flag_path/" . $flag_name . ".png'><span role='presentation' class='dropdown-menu-toggle'><span class='gp-icon icon-arrow'><svg viewBox='0 0 330 512' aria-hidden='true' xmlns='http://www.w3.org/2000/svg' width='1em' height='1em'><path d='M305.913 197.085c0 2.266-1.133 4.815-2.833 6.514L171.087 335.593c-1.7 1.7-4.249 2.832-6.515 2.832s-4.815-1.133-6.515-2.832L26.064 203.599c-1.7-1.7-2.832-4.248-2.832-6.514s1.132-4.816 2.832-6.515l14.162-14.163c1.7-1.699 3.966-2.832 6.515-2.832 2.266 0 4.815 1.133 6.515 2.832l111.316 111.317 111.316-111.317c1.7-1.699 4.249-2.832 6.515-2.832s4.815 1.133 6.515 2.832l14.162 14.163c1.7 1.7 2.833 4.249 2.833 6.515z'></path></svg></span></span></a>";
+	public function render_item( array $item, string $variant, string $context = 'link', string $classes = '' ) {
+		$label_code = esc_html( $item['code'] );
+		$label_name = esc_html( $item['name'] );
+		$flag_url   = esc_url( $item['flag_url'] );
+		$url        = esc_url( $item['url'] );
+		$alt        = esc_attr( $item['alt'] );
+		$classes    = trim( $classes );
+		// Contenuto in base alla variante.
+		switch ( $variant ) {
+			case 'flag-only':
+				$content = '<img src="' . $flag_url . '" alt="' . $alt . '" />';
+				break;
+			case 'text-only':
+				$content = $label_name;
+				break;
+			case 'code-only':
+				$content = $label_code;
+				break;
+			case 'flag-and-text':
+			default:
+				$content = '<img src="' . $flag_url . '" alt="' . $alt . '" /> <span class="lsft-label">' . $label_name . '</span>';
+				break;
+		}
+
+		// Wrapping per context.
+		if ( 'option' === $context ) {
+			$selected = ! empty( $item['is_current'] ) ? ' selected' : '';
+			// Nelle option niente immagini: scegli etichetta in base alla variante.
+			$option_label = ( 'code-only' === $variant ) ? $label_code : $label_name;
+			return '<option value="' . $label_code . '" data-target="' . $url . '" class="no_translate"' . $selected . '>' . $option_label . '</option>';
+		}
+
+		if ( 'toggle' === $context ) {
+			$class_attr = $classes ? ' class="' . $classes . '"' : '';
+			return '<a href="#" id="stylable-list-first-item" aria-expanded="false"' . $class_attr . '>' . $content . '</a>';
+		}
+
+		$class_attr = $classes ? ' class="' . $classes . '"' : '';
+		return '<a href="' . $url . '"' . $class_attr . '>' . $content . '</a>';
 	}
 
-		/**
-		 * Returns the markup of the first list item.
-		 *
-		 * @since    1.0.0
-		 */
-	public function get_list_first_item_markup_sc_names() {
-		$lang_name = $this->options['original_lang_names'] === 'on' ? ucfirst( transposh_consts::get_language_orig_name( $this->get_current_lang() ) ) : ucfirst( transposh_consts::get_language_name( $this->get_current_lang() ) );
-		return "<a href='#' id='shortcode-stylable-list-first-item' class='no_translate'>$lang_name<span role='presentation' class='dropdown-menu-toggle'><span class='gp-icon icon-arrow'><svg viewBox='0 0 330 512' aria-hidden='true' xmlns='http://www.w3.org/2000/svg' width='1em' height='1em'><path d='M305.913 197.085c0 2.266-1.133 4.815-2.833 6.514L171.087 335.593c-1.7 1.7-4.249 2.832-6.515 2.832s-4.815-1.133-6.515-2.832L26.064 203.599c-1.7-1.7-2.832-4.248-2.832-6.514s1.132-4.816 2.832-6.515l14.162-14.163c1.7-1.699 3.966-2.832 6.515-2.832 2.266 0 4.815 1.133 6.515 2.832l111.316 111.317 111.316-111.317c1.7-1.699 4.249-2.832 6.515-2.832s4.815 1.133 6.515 2.832l14.162 14.163c1.7 1.7 2.833 4.249 2.833 6.515z'></path></svg></span></span></a>";
+	/**
+	 * Contenitori standardizzati.
+	 *
+	 * @param string $html The inner HTML of the list.
+	 * @param string $layout The layout to use (horizontal, vertical).
+	 * @param array  $opts Additional options (id, classes).
+	 * @return string The rendered HTML of the list container.
+	 * @since 1.8.1
+	 */
+	private function render_container_list( $html, $layout, $opts ) {
+		$id          = isset( $opts['id'] ) ? ' id="' . $opts['id'] . '"' : '';
+		$orientation = ( 'horizontal' === $layout ) ? 'cfxlsft-horizontal' : 'cfxlsft-vertical';
+		$is_menu     = isset( $opts['is_menu'] ) && $opts['is_menu'];
+		if ( $is_menu ) {
+			return "<li class='menu-item'><ul$id class='cfxlsft-list $orientation'>$html</ul></li>";
+		}
+		return "<ul$id class='cfxlsft-list $orientation'>$html</ul>";
 	}
 
-		/**
-		 * Returns the markup of the first list item.
-		 *
-		 * @since    1.0.0
-		 */
-	public function get_list_first_item_markup_sc_flags_names() {
-		$flag_name = $this->get_flag_name( $this->get_current_lang() );
-		$lang_name = $this->options['original_lang_names'] === 'on' ? ucfirst( transposh_consts::get_language_orig_name( $this->get_current_lang() ) ) : ucfirst( transposh_consts::get_language_name( $this->get_current_lang() ) );
-		return "<a href='#' id='shortcode-stylable-list-first-item' class='no_translate' style='background: url($this->flag_path/" . $flag_name . ".png) 0 center no-repeat;'>$lang_name<span role='presentation' class='dropdown-menu-toggle'><span class='gp-icon icon-arrow'><svg viewBox='0 0 330 512' aria-hidden='true' xmlns='http://www.w3.org/2000/svg' width='1em' height='1em'><path d='M305.913 197.085c0 2.266-1.133 4.815-2.833 6.514L171.087 335.593c-1.7 1.7-4.249 2.832-6.515 2.832s-4.815-1.133-6.515-2.832L26.064 203.599c-1.7-1.7-2.832-4.248-2.832-6.514s1.132-4.816 2.832-6.515l14.162-14.163c1.7-1.699 3.966-2.832 6.515-2.832 2.266 0 4.815 1.133 6.515 2.832l111.316 111.317 111.316-111.317c1.7-1.699 4.249-2.832 6.515-2.832s4.815 1.133 6.515 2.832l14.162 14.163c1.7 1.7 2.833 4.249 2.833 6.515z'></path></svg></span></span></a>";
+	/**
+	 * Renders a dropdown container.
+	 *
+	 * @param string $toggle_html The HTML of the toggle item.
+	 * @param string $items_html The inner HTML of the dropdown items.
+	 * @param array  $opts Additional options (id, classes).
+	 * @return string The rendered HTML of the dropdown container.
+	 * @since 1.8.1
+	 */
+	private function render_container_dropdown( $toggle_html, $items_html, $opts ) {
+		$id      = isset( $opts['id'] ) ? ' id="' . $opts['id'] . '"' : '';
+		$classes = isset( $opts['classes'] ) ? ' ' . $opts['classes'] : '';
+		$is_menu = isset( $opts['is_menu'] ) && $opts['is_menu'];
+		if ( $is_menu ) {
+			return "<li class='menu-item'><ul$id class='stylable-list $classes'>$toggle_html<ul id='lsft-sub-menu'>$items_html</ul></ul></li>";
+		}
+		return "<ul$id class='stylable-list $classes'>$toggle_html<ul id='lsft-sub-menu'>$items_html</ul></ul>";
+	}
+
+	/**
+	 * Renders a select container.
+	 *
+	 * @param string $html The inner HTML of the select.
+	 * @param array  $opts Additional options (id, classes).
+	 * @return string The rendered HTML of the select container.
+	 * @since 1.8.1
+	 */
+	private function render_container_select( $html, $opts ) {
+		$id       = isset( $opts['id'] ) ? ' id="' . $opts['id'] . '"' : '';
+		$is_menu  = isset( $opts['is_menu'] ) && $opts['is_menu'];
+		$onchange = 'window.location.href=this.options[this.selectedIndex].getAttribute("data-target")';
+		if ( $is_menu ) {
+			return "<li class='menu-item'><select$id class='cfxlsft_select' onchange='$onchange'>$html</select></li>";
+		}
+		return "<select$id class='cfxlsft_select' onchange='$onchange'>$html</select>";
+	}
+
+	/**
+	 * Renders the language switcher.
+	 *
+	 * @param string $variant The variant to use (flag-only, text-only, code-only, flag-and-text).
+	 * @param string $layout The layout to use (horizontal, vertical, dropdown, select).
+	 * @param array  $opts Additional options (id, classes).
+	 * @return string The rendered HTML of the language switcher.
+	 * @since 1.8.1
+	 */
+	public function render_switcher( string $variant, string $layout, array $opts = array() ) {
+		$languages = $this->get_languages();
+		if ( empty( $languages ) || count( $languages ) <= 1 ) {
+			return '';
+		}
+
+		$items_html   = '';
+		$menu_classes = isset( $opts['classes'] ) ? $opts['classes'] : '';
+
+		switch ( $layout ) {
+			case 'select':
+				foreach ( $languages as $lang ) {
+					$items_html .= $this->render_item( $lang, $variant, 'option' );
+				}
+				$items_html .= $this->maybe_render_edit_button( 'select' );
+				return $this->render_container_select( $items_html, $opts );
+
+			case 'dropdown':
+				$current = array_filter(
+					$languages,
+					function ( $l ) {
+						return $l['is_current'];
+					}
+				);
+				$current = ! empty( $current ) ? reset( $current ) : $languages[0];
+
+				$toggle_html = $this->render_item( $current, $variant, 'toggle', 'menu-link' );
+				foreach ( $languages as $lang ) {
+					$items_html .= "<li class='no_translate $menu_classes'>" . $this->render_item( $lang, $variant, 'link', 'menu-link' ) . '</li>';
+				}
+				$items_html .= $this->maybe_render_edit_button( 'dropdown', $menu_classes );
+				return $this->render_container_dropdown( $toggle_html, $items_html, $opts );
+
+			default: // 'horizontal' o 'vertical'
+				foreach ( $languages as $lang ) {
+					$current     = $lang['is_current'] ? 'current-lang' : '';
+					$items_html .= "<li class='switch_lang no_translate $menu_classes $current'>" . $this->render_item( $lang, $variant, 'link', 'menu-link' ) . '</li>';
+				}
+				$items_html .= $this->maybe_render_edit_button( 'list', $menu_classes );
+				return $this->render_container_list( $items_html, $layout, $opts );
+		}
 	}
 
 	/**
 	 * Returns the markup for the list items.
 	 *
-	 * @param string $lang selected language.
-	 * @since    1.0.0
+	 * @since    1.8.1
 	 */
-	public function get_list_item_markup( $lang ) {
-		$flag_name = $this->get_flag_name( $lang );
-		$target    = $this->get_target_page( $lang );
-		$lang_name = $this->options['original_lang_names'] === 'on' ? ucfirst( transposh_consts::get_language_orig_name( $lang ) ) : ucfirst( transposh_consts::get_language_name( $lang ) );
-		switch ( $this->options['custom_list_items'] ) {
-			case 'flag-only':
-				$item = "<a class='menu-link' href='$target'><img src='{$this->flag_path}/$flag_name.png'></a>";
-				break;
-			case 'text-only':
-				$item = "<a class='menu-link'  href='$target'>$lang_name</a>";
-				break;
-			case 'flag-and-text':
-				$item = "<a class='menu-link' style='background: url({$this->flag_path}/$flag_name.png) 0 center no-repeat;' href='$target'>$lang_name</a>";
-				break;
-			default:
-		}
-		return $item;
-	}
-
-		/**
-		 * Returns the markup for the list items.
-		 *
-		 * @param string $lang selected language.
-		 * @since    1.0.0
-		 */
-
-	public function get_list_item_markup_sc_flags( $lang ) {
-		$flag_name = $this->get_flag_name( $lang );
-		$target    = $this->get_target_page( $lang );
-		return "<a href='$target'><img src='" . $this->flag_path . '/' . $flag_name . ".png' /></a>";
-	}
-
-		/**
-		 * Returns the markup for the list items.
-		 *
-		 * @param string $lang selected language.
-		 * @since    1.0.0
-		 */
-
-	public function get_list_item_markup_sc_names( $lang ) {
-		$target    = $this->get_target_page( $lang );
-		$lang_name = $this->options['original_lang_names'] === 'on' ? ucfirst( transposh_consts::get_language_orig_name( $lang ) ) : ucfirst( transposh_consts::get_language_name( $lang ) );
-		return "<a href='$target'>$lang_name</a>";
-	}
-
-		/**
-		 * Returns the markup for the list items.
-		 *
-		 * @param string $lang selected language.
-		 * @since    1.0.0
-		 */
-
-	public function get_list_item_markup_sc_flags_names( $lang ) {
-		$flag_name = $this->get_flag_name( $lang );
-		$target    = $this->get_target_page( $lang );
-		$lang_name = $this->options['original_lang_names'] === 'on' ? ucfirst( transposh_consts::get_language_orig_name( $lang ) ) : ucfirst( transposh_consts::get_language_name( $lang ) );
-		return "<a style='background: url($this->flag_path/" . $flag_name . ".png) 0 center no-repeat;' href='$target'>$lang_name</a>";
-	}
-
-		/**
-		 * Returns the markup for the list items.
-		 *
-		 * @since    1.0.0
-		 */
 	public function shortcode_horizontal_flags() {
-		$used_languages = $this->used_languages;
-		$items          = '';
-		if ( ! empty( $used_languages ) && count( $used_languages ) > 1 ) {
-			$flag_name = $this->get_flag_name( $this->get_current_lang() );
-
-			$items = '<ul id="sh_lsft_horizontal_flags">';
-			foreach ( $used_languages as $lang ) {
-				$lang_name = 'on' === $this->options['original_lang_names'] ? ucfirst( transposh_consts::get_language_orig_name( $lang ) ) : ucfirst( transposh_consts::get_language_name( $lang ) );
-				$flag_name = $this->get_flag_name( $lang );
-				$target    = $this->get_target_page( $lang );
-				$items    .= '<li class="switch_lang no_translate""><a class="lsft_sc_h_flags" href="' . $target . '"><img src="' . $this->flag_path . '/' . $flag_name . '.png" alt="' . $lang_name . '"/></a></li>';
-			}
-			if ( $this->get_current_lang() != $this->default_lang ) {
-
-				$user          = wp_get_current_user();
-				$allowed_roles = array( 'editor', 'administrator', 'author' );
-				/**this button will be available only to certain user types */
-				if ( array_intersect( $allowed_roles, $user->roles ) ) {
-					$items .= '<li class="edit_translation no_translate"><a class="lsft_sc_h_flags" href="#"> Edit</a></li>';
-				}
-			}
-			$items .= '</ul>';
-		}
-		return $items;
-
-	}
-
-			/**
-			 * Returns the markup for the list items.
-			 *
-			 * @since    1.0.0
-			 */
-	public function shortcode_vertical_flags() {
-		$used_languages = $this->used_languages;
-		$items          = '';
-		if ( ! empty( $used_languages ) && count( $used_languages ) > 1 ) {
-
-			$flag_name = $this->get_flag_name( $this->get_current_lang() );
-			// $lang_name = $this->options['original_lang_names'] === 'on' ? ucfirst( transposh_consts::get_language_orig_name( $this->get_current_lang() ) ) : ucfirst( transposh_consts::get_language_name( $this->get_current_lang() ) );
-			$items = '<ul id="sh_lsft_vertical_flags">';
-			// $items .= '<li class="switch_lang no_translate" style="margin-bottom:auto;"><a class="lsft_sc_h_flags" href="' . $target . '"><img src="' . $this->flag_path . '/' . $flag_name . '.png" /></a></li>';
-			foreach ( $used_languages as $lang ) {
-				$lang_name = $this->options['original_lang_names'] === 'on' ? ucfirst( transposh_consts::get_language_orig_name( $lang ) ) : ucfirst( transposh_consts::get_language_name( $lang ) );
-				$flag_name = $this->get_flag_name( $lang );
-				$target    = $this->get_target_page( $lang );
-				$items    .= '<li class="switch_lang no_translate"><a class="lsft_sc_h_flags" href="' . $target . '"><img src="' . $this->flag_path . '/' . $flag_name . '.png" alt="' . $lang_name . '" /></a></li>';
-			}
-			if ( $this->get_current_lang() != $this->default_lang ) {
-
-				$user          = wp_get_current_user();
-				$allowed_roles = array( 'editor', 'administrator', 'author' );
-				/**this button will be available only to certain user types */
-				if ( array_intersect( $allowed_roles, $user->roles ) ) {
-					$items .= '<li class="edit_translation no_translate"><a class="lsft_sc_h_flags" href="#"> Edit</a></li>';
-				}
-			}
-			$items .= '</ul>';
-		}
-		return $items;
-	}
-
-			/**
-			 * Returns the markup for the list items.
-			 *
-			 * @since    1.0.0
-			 */
-	public function shortcode_native_dropdown() {
-		$used_languages = $this->used_languages;
-		$items          = '';
-		if ( ! empty( $used_languages ) && count( $used_languages ) > 1 ) {
-			$items .= '<select id="switch_lang_select" class="switch_lang_select stylable-select">';
-			foreach ( $this->used_languages as $lang ) {
-				$target    = $this->get_target_page( $lang );
-				$lang_name = $this->options['original_lang_names'] === 'on' ? ucfirst( transposh_consts::get_language_orig_name( $lang ) ) : ucfirst( transposh_consts::get_language_name( $lang ) );
-				if ( $lang == $this->get_current_lang() ) {
-					$selected = 'selected';
-				} else {
-					$selected = '';
-				}
-				$items .= '<option data-target="' . $target . '" value="' . $lang . '" ' . $selected . ' class="no_translate">' . $lang_name . ' </option>';
-			}
-			$items .= '</select>';
-			if ( $this->get_current_lang() != $this->default_lang ) {
-				$user          = wp_get_current_user();
-				$allowed_roles = array( 'editor', 'administrator', 'author' );
-				/**this button will be available only to certain user types */
-				if ( array_intersect( $allowed_roles, $user->roles ) ) {
-					$items .= '<a class="edit_translation no_translate" href="#">Edit</a>';
-				}
-			}
-		}
-		return $items;
-	}
-
-			/**
-			 * Returns the markup for the list items.
-			 *
-			 * @since    1.0.0
-			 */
-	public function shortcode_custom_dropdown_flags() {
-		$used_languages = $this->used_languages;
-		$items          = '<ul id="sh_lsft_custom_dropdown_flags">';
-		$items         .= "<li class='stylable-list'>";
-		$items         .= $this->get_list_first_item_markup_sc_flags();
-		// if (($key = array_search($this->get_current_lang(), $used_languages)) !== false) {
-		// unset($used_languages[$key]);
-		// }
-		$items .= "<ul id='sh_sc_flags_submenu'>";
-		foreach ( $used_languages as $lang ) {
-			$items .= "<li class='no_translate'>" . $this->get_list_item_markup_sc_flags( $lang ) . '</li>';
-		}
-		// if ($this->get_current_lang() != $this->default_lang) {
-
-		$user          = wp_get_current_user();
-		$allowed_roles = array( 'editor', 'administrator', 'author' );
-		/**this button will be available only to certain user types */
-		if ( array_intersect( $allowed_roles, $user->roles ) ) {
-			$items .= '<li class="edit_translation no_translate"><a class="lsft_sc_h_flags" href="#">Edit</a></li>';
-		}
-		// }
-		$items .= '</ul></li>';
-		$items .= '</ul>';
-		return $items;
-	}
-
-			/**
-			 * Returns the markup for the list items.
-			 *
-			 * @since    1.0.0
-			 */
-	public function shortcode_custom_dropdown_names() {
-		$used_languages = $this->used_languages;
-		// wp_enqueue_style($this->plugin_name . '-shortcode_custom_dropdown_flags', $this->style_path . 'shortcode-custom-dropdown-flags.css', array(), $this->version, 'all');
-		$items  = '<ul id="sh_lsft_custom_dropdown_names">';
-		$items .= "<li class='stylable-list'>";
-		$items .= $this->get_list_first_item_markup_sc_names();
-		// if (($key = array_search($this->get_current_lang(), $used_languages)) !== false) {
-		// unset($used_languages[$key]);
-		// }
-		$items .= "<ul id='sh_sc_names_submenu'>";
-		foreach ( $used_languages as $lang ) {
-			$items .= "<li class='no_translate'>" . $this->get_list_item_markup_sc_names( $lang ) . '</li>';
-		}
-		// if ($this->get_current_lang() != $this->default_lang) {
-		$user          = wp_get_current_user();
-		$allowed_roles = array( 'editor', 'administrator', 'author' );
-		/**this button will be available only to certain user types */
-		if ( array_intersect( $allowed_roles, $user->roles ) ) {
-			$items .= "<li class='edit_translation no_translate'><a class='lsft_sc_h_flags' href='#'>Edit</a></li>";
-		}
-		// }
-		$items .= '</ul></li>';
-		$items .= '</ul>';
-		return $items;
-	}
-
-			/**
-			 * Returns the markup for the list items.
-			 *
-			 * @since    1.0.0
-			 */
-	public function shortcode_custom_dropdown_flags_names() {
-		$used_languages = $this->used_languages;
-		// wp_enqueue_style($this->plugin_name . '-shortcode_custom_dropdown_flags', $this->style_path . 'shortcode-custom-dropdown-flags.css', array(), $this->version, 'all');
-		$items  = '<ul id="sh_lsft_custom_dropdown_flags_names">';
-		$items .= "<li class='stylable-list flag-and-text'>";
-		$items .= $this->get_list_first_item_markup_sc_flags_names();
-		// if (($key = array_search($this->get_current_lang(), $used_languages)) !== false) {
-		// unset($used_languages[$key]);
-		// }
-		$items .= "<ul id='sh_sc_flags_names_submenu'>";
-		foreach ( $used_languages as $lang ) {
-			$items .= "<li class='no_translate flag-and-text'>" . $this->get_list_item_markup_sc_flags_names( $lang ) . '</li>';
-		}
-		// if ($this->get_current_lang() != $this->default_lang) {
-
-		$user          = wp_get_current_user();
-		$allowed_roles = array( 'editor', 'administrator', 'author' );
-		/**this button will be available only to certain user types */
-		if ( array_intersect( $allowed_roles, $user->roles ) ) {
-			$items .= '<li class="edit_translation no_translate"><a class="lsft_sc_h_flags" href="#">Edit</a></li>';
-		}
-		// }
-		$items .= '</ul></li>';
-		$items .= '</ul>';
-		return $items;
+		return $this->render_switcher( 'flag-only', 'horizontal', array( 'id' => 'sh_lsft_horizontal_flags' ) );
 	}
 
 	/**
-	 * Actually adds the language switcher to the main manu.
+	 * Returns the markup for the list items.
 	 *
-	 * @param string $items the comma separated string representing menu items.
-	 * @param object $args arguments.
-	 * @since    1.0.0
+	 * @since    1.8.1
+	 */
+	public function shortcode_horizontal_codes() {
+		return $this->render_switcher( 'code-only', 'horizontal', array( 'id' => 'sh_lsft_horizontal_codes' ) );
+	}
+
+	/**
+	 * Returns the markup for the list items.
+	 *
+	 * @since    1.8.1
+	 */
+	public function shortcode_vertical_flags() {
+		return $this->render_switcher( 'flag-only', 'vertical', array( 'id' => 'sh_lsft_vertical_flags' ) );
+	}
+
+	/**
+	 * Returns the markup for the list items.
+	 *
+	 * @since    1.8.1
+	 */
+	public function shortcode_vertical_codes() {
+		return $this->render_switcher( 'code-only', 'vertical', array( 'id' => 'sh_lsft_vertical_codes' ) );
+	}
+
+	/**
+	 * Returns the markup for the list items.
+	 *
+	 * @since    1.8.1
+	 */
+	public function shortcode_custom_dropdown_flags() {
+		return $this->render_switcher( 'flag-only', 'dropdown', array( 'id' => 'sh_lsft_custom_dropdown_flags' ) );
+	}
+
+	/**
+	 * Returns the markup for the list items.
+	 *
+	 * @since    1.8.1
+	 */
+	public function shortcode_custom_dropdown_codes() {
+		return $this->render_switcher( 'code-only', 'dropdown', array( 'id' => 'sh_lsft_custom_dropdown_codes' ) );
+	}
+
+	/**
+	 * Returns the markup for the list items.
+	 *
+	 * @since    1.8.1
+	 */
+	public function shortcode_custom_dropdown_names() {
+		return $this->render_switcher( 'text-only', 'dropdown', array( 'id' => 'sh_lsft_custom_dropdown_names' ) );
+	}
+
+	/**
+	 * Returns the markup for the list items.
+	 *
+	 * @since    1.8.1
+	 */
+	public function shortcode_custom_dropdown_flags_names() {
+		return $this->render_switcher( 'flag-and-text', 'dropdown', array( 'id' => 'sh_lsft_custom_dropdown_flags_names' ) );
+	}
+
+	/**
+	 * Returns the markup for the list items.
+	 *
+	 * @since    1.8.1
+	 */
+	public function shortcode_native_dropdown_codes() {
+		return $this->render_switcher( 'code-only', 'select', array( 'id' => 'sh_lsft_select_code' ) );
+	}
+
+	/**
+	 * Returns the markup for the list items.
+	 *
+	 * @since    1.8.1
+	 */
+	public function shortcode_native_dropdown_text() {
+		return $this->render_switcher( 'text-only', 'select', array( 'id' => 'sh_lsft_select_text' ) );
+	}
+
+	/**
+	 * Adds the language switcher to the selected menu.
+	 *
+	 * @param string   $items The menu items HTML.
+	 * @param stdClass $args  The menu arguments.
+	 * @return string The modified menu items HTML.
+	 * @since    1.8.1
 	 */
 	public function cfxlsft_add_menu_item( $items, $args ) {
-		$used_languages = $this->used_languages;
-		if ( 'on' === $this->options['automode'] ) {
-			$menu_classes   = str_replace( ',', '', $this->options['menu_classes'] );
-			$menu_locations = explode( ',', $this->options['menu_locations'] );
-			// if we only use one language nothing has to be added.
-			if ( ! empty( $used_languages ) && count( $used_languages ) > 1 ) {
-				if ( in_array( $args->theme_location, $menu_locations, true ) ) {
-					/**DISPLAY FLAGS */
-					if ( $this->options['switcher_type'] == 'flags' ) {
-						foreach ( $used_languages as $lang ) {
-							$flag_name = $this->get_flag_name( $lang );
-							$target    = $this->get_target_page( $lang );
-							$lang_name = 'on' === $this->options['original_lang_names'] ? ucfirst( transposh_consts::get_language_orig_name( $lang ) ) : ucfirst( transposh_consts::get_language_name( $lang ) );
-							$items    .= '<li class="' . $menu_classes . ' menu-item switch_lang no_translate"><a class="menu-link" href="' . $target . '"><img src="' . $this->flag_path . '/' . $flag_name . '.png" alt="' . $lang_name . '" /></a></li>';
-						}
-						if ( get_locale() != $this->default_lang ) {
-
-							$user          = wp_get_current_user();
-							$allowed_roles = array( 'editor', 'administrator', 'author' );
-
-							// this button will be available only to certain user types.
-							if ( array_intersect( $allowed_roles, $user->roles ) ) {
-								$items .= '<li class="' . $menu_classes . ' menu-item edit_translation no_translate"><a class="menu-link" href="#"> Edit</a></li>';
-							}
-						}
-					} elseif ( $this->options['switcher_type'] === 'list' ) {
-						/** DISPLAY CUSTOM LIST */
-						$class = '';
-						// if ( 'flag-and-text' === $this->options['custom_list_items'] ) {
-						// $class = "style='background: url($this->flag_path/" . $flag_name . ".png) 0 center no-repeat;'";
-						// }
-						$items .= "<li class='stylable-list menu-item $menu_classes " . $this->options['custom_list_items'] . "'>";
-						$items .= $this->get_list_first_item_markup();
-						$items .= "<ul id='lsft-sub-menu'>";
-						foreach ( $used_languages as $lang ) {
-							$items .= "<li class='no_translate $menu_classes'>" . $this->get_list_item_markup( $lang ) . '</li>';
-						}
-						if ( get_locale() != $this->default_lang ) {
-							$user          = wp_get_current_user();
-							$allowed_roles = array( 'editor', 'administrator', 'author' );
-							/**this button will be available only to certain user types */
-							if ( array_intersect( $allowed_roles, $user->roles ) ) {
-								$items .= '<li class="' . $menu_classes . ' edit_translation no_translate"><a class="menu-link" href="#"> Edit</a></li>';
-							}
-						}
-						$items .= '</ul>';
-						$items .= '</li>';
-					} else {
-						/** DISPLAY SELECT */
-						$items .= '<li class="menu-item ' . $menu_classes . '"><select id="switch_lang_select" class="switch_lang_select stylable-select">';
-						foreach ( $used_languages as $lang ) {
-							$target    = $this->get_target_page( $lang );
-							$lang_name = $this->options['original_lang_names'] === 'on' ? ucfirst( transposh_consts::get_language_orig_name( $lang ) ) : ucfirst( transposh_consts::get_language_name( $lang ) );
-							if ( $lang == $this->get_current_lang() ) {
-								$selected = 'selected';
-							} else {
-								$selected = '';
-							}
-							$items .= '<option data-target="' . $target . '" value="' . $lang . '" ' . $selected . ' class="no_translate">' . $lang_name . ' </option>';
-						}
-						$items .= '</select></li>';
-						// if ($this->get_current_lang() != $this->default_lang) {
-
-						$user          = wp_get_current_user();
-						$allowed_roles = array( 'editor', 'administrator', 'author' );
-						/**this button will be available only to certain user types */
-						if ( array_intersect( $allowed_roles, $user->roles ) ) {
-							$items .= '<li class="menu-item ' . $menu_classes . ' edit_translation no_translate"><a class="menu-link" href="#">' . $this->get_current_lang() . ' Edit</a></li>';
-						}
-						// }
-					}
-				}
-			}
+		if ( ! isset( $this->options['automode'] ) || 'on' !== $this->options['automode'] ) {
+			return $items;
 		}
+
+		$menu_locations = ! empty( $this->options['menu_locations'] ) ? explode( ',', $this->options['menu_locations'] ) : array( 'primary' );
+		if ( ! in_array( $args->theme_location, $menu_locations, true ) ) {
+			return $items;
+		}
+
+		$menu_classes  = isset( $this->options['menu_classes'] ) ? str_replace( ',', ' ', $this->options['menu_classes'] ) : '';
+		$switcher_type = isset( $this->options['switcher_type'] ) ? $this->options['switcher_type'] : 'flags';
+
+		$mapping = array(
+			'flags'  => array( 'flag-only', 'horizontal' ),
+			'codes'  => array( 'code-only', 'horizontal' ),
+			'list'   => array( ( $this->options['custom_list_items'] ?? 'flag-only' ), 'dropdown' ),
+			'select' => array(
+				( isset( $this->options['custom_list_items'] ) && 'code-only' === $this->options['custom_list_items'] ) ? 'code-only' : 'text-only',
+				'select',
+			),
+		);
+
+		if ( isset( $mapping[ $switcher_type ] ) ) {
+			list($variant, $layout) = $mapping[ $switcher_type ];
+			// Per il menu non usiamo container <ul> esterni ma aggiungiamo i list item direttamente.
+			$items .= $this->render_switcher(
+				$variant,
+				$layout,
+				array(
+					'id'      => 'cfxlsft-menu-' . $switcher_type,
+					'classes' => $menu_classes,
+					'is_menu' => true,
+				),
+			);
+		}
+
 		return $items;
 	}
 
@@ -710,7 +696,8 @@ class Cfx_Language_Switcher_For_Transposh_Public {
 	 *
 	 * @since    1.0.0
 	 */
-	public function cfxlsft_edit_button_action() {   ?>
+	public function cfxlsft_edit_button_action() {
+		?>
 	<script type="text/javascript">
 		jQuery(document).ready(function($) {
 		var urlParam = function(name) {
@@ -741,4 +728,8 @@ class Cfx_Language_Switcher_For_Transposh_Public {
 	</script>
 		<?php
 	}
+	// [ ] rivedere css per glishortcodes non liste perché gli elementi non hanno margini che li distanzino l'uno dall'altro
+	// [ ] fare in modo che l'ormai unico file css sia editabile e salvabile dall'utente, magari nel database e poi estrarlo a applicarlo inline nella pagina di frontend
+	// [ ] controllare widget
+	// [ ] controllare che funzioni bene con temi particolari come Divi, Elementor, WP Bakery ecc.
 }
